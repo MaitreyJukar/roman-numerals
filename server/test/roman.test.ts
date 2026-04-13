@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { ROMAN_MAX, toRoman, toRomanAdditive, toRomanRangeParallel, toRomanSubtractive } from "../src/services/roman.js";
+import { ROMAN_MAX, toRoman, toRomanRangeParallel, toRomanSubtractive } from "../src/services/roman.js";
 
 describe("toRomanSubtractive", () => {
   it("converts known values", () => {
