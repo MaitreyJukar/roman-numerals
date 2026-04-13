@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { ROMAN_MAX, toRoman, toRomanRangeParallel, toRomanSubtractive } from "../src/services/roman.js";
+import { ROMAN_MAX, toRoman, toRomanAdditive, toRomanRangeParallel, toRomanSubtractive } from "../src/services/roman.js";
 
 describe("toRomanSubtractive", () => {
   it("converts known values", () => {
@@ -66,6 +66,12 @@ describe("toRoman (additive flag)", () => {
     assert.equal(toRoman(4000, true), `I${o}I${o}I${o}I${o}`);
     assert.equal(toRoman(4004, true), `I${o}I${o}I${o}I${o}IIII`);
     assert.equal(toRoman(4004, false), `I${o}V${o}IV`);
+  });
+});
+
+describe("toRomanAdditive", () => {
+  it("rejects non-integers like subtractive helpers", () => {
+    assert.throws(() => toRomanAdditive(4.1), /RangeError/);
   });
 });
 

@@ -6,6 +6,16 @@
 const VALUES = [1000, 900, 500, 400, 100, 90, 50, 40, 10, 9, 5, 4, 1] as const;
 const SYMBOLS = ["M", "CM", "D", "CD", "C", "XC", "L", "XL", "X", "IX", "V", "IV", "I"] as const;
 
+const ADDITIVE_PATTERN = /CM|CD|XC|XL|IX|IV/g;
+const ADDITIVE_MAP: Record<string, string> = {
+  CM: "DCCCC",
+  CD: "CCCC",
+  XC: "LXXXX",
+  XL: "XXXX",
+  IX: "VIIII",
+  IV: "IIII"
+};
+
 /** Upper bound for greedy I–M notation without overlines. */
 export const ROMAN_BASE_MAX = 3999;
 
@@ -20,7 +30,7 @@ const COMBINING_OVERLINE = "\u0305";
 function toRomanBase(num: number): string {
   let n = num;
   let out = "";
-  for (let i = 0; i < VALUES.length; i++) {
+  for (let i = 0; i < VALUES.length && n > 0; i++) {
     const v = VALUES[i];
     const s = SYMBOLS[i];
     while (n >= v) {
@@ -48,28 +58,15 @@ function addVinculumLayer(s: string): string {
   return s.replace(/[IVXLCDM](?:\u0305)*/g, (block) => block + COMBINING_OVERLINE);
 }
 
-const SUBTRACTIVE_TO_ADDITIVE: readonly [string, string][] = [
-  ["CM", "DCCCC"],
-  ["CD", "CCCC"],
-  ["XC", "LXXXX"],
-  ["XL", "XXXX"],
-  ["IX", "VIIII"],
-  ["IV", "IIII"]
-];
-
 /**
  * Classic subtractive form expanded to additive symbols only (I, V, X, L, C, D, M),
  * so each glyph ×1000 under a vinculum matches “bar over the whole value”.
  */
 export function toRomanAdditive(num: number): string {
-  if (num < 1 || num > ROMAN_BASE_MAX) {
-    throw new RangeError(`Additive expansion requires ${1}–${ROMAN_BASE_MAX}`);
+  if (!Number.isInteger(num) || num < 1 || num > ROMAN_BASE_MAX) {
+    throw new RangeError(`Additive expansion requires an integer between 1 and ${ROMAN_BASE_MAX}`);
   }
-  let s = toRomanBase(num);
-  for (const [sub, rep] of SUBTRACTIVE_TO_ADDITIVE) {
-    s = s.split(sub).join(rep);
-  }
-  return s;
+  return toRomanBase(num).replace(ADDITIVE_PATTERN, (m) => ADDITIVE_MAP[m]);
 }
 
 function classicalPart(num: number, additive: boolean): string {
@@ -108,7 +105,9 @@ export interface RomanRangeOptions {
 }
 
 /**
- * Converts a contiguous range in parallel chunks (async scheduling).
+ * Converts a contiguous range using chunked async scheduling.
+ * Preallocates the result array and fills by index so ordering stays correct without
+ * building intermediate `slice`/`flat` structures.
  * Results are sorted ascending by input value.
  */
 export async function toRomanRangeParallel(
@@ -118,25 +117,28 @@ export async function toRomanRangeParallel(
 ): Promise<RomanPair[]> {
   const chunkSize = options.chunkSize ?? 250;
   const additive = options.additive ?? false;
+  const totalCount = max - min + 1;
 
-  const numbers: number[] = [];
-  for (let i = min; i <= max; i++) numbers.push(i);
+  const results: RomanPair[] = new Array(totalCount);
 
-  const chunks: number[][] = [];
-  for (let i = 0; i < numbers.length; i += chunkSize) {
-    chunks.push(numbers.slice(i, i + chunkSize));
+  const promises: Promise<void>[] = [];
+  for (let start = min; start <= max; start += chunkSize) {
+    const chunkStart = start;
+    const chunkEnd = Math.min(start + chunkSize - 1, max);
+    const offset = chunkStart - min;
+
+    promises.push(
+      Promise.resolve().then(() => {
+        for (let n = chunkStart; n <= chunkEnd; n++) {
+          results[offset + n - chunkStart] = {
+            input: String(n),
+            output: toRoman(n, additive)
+          };
+        }
+      })
+    );
   }
 
-  const partial = await Promise.all(
-    chunks.map((chunk) =>
-      Promise.resolve().then(() =>
-        chunk.map((n) => ({
-          input: String(n),
-          output: toRoman(n, additive)
-        }))
-      )
-    )
-  );
-
-  return partial.flat();
+  await Promise.all(promises);
+  return results;
 }
