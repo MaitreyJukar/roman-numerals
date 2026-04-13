@@ -9,10 +9,22 @@ async function fetchText<T>(url: string): Promise<T> {
     ? ((await res.json()) as T)
     : ((await res.text()) as unknown as T);
   if (!res.ok) {
-    const msg = typeof body === "string" ? body : JSON.stringify(body);
+    const msg = extractErrorMessage(body);
     throw new Error(msg || `Request failed (${res.status})`);
   }
   return body;
+}
+
+function extractErrorMessage(body: unknown): string {
+  if (typeof body === "string") return body;
+  if (body && typeof body === "object" && "error" in body) {
+    const error = (body as { error?: unknown }).error;
+    if (error && typeof error === "object" && "message" in error) {
+      const message = (error as { message?: unknown }).message;
+      if (typeof message === "string" && message.trim()) return message;
+    }
+  }
+  return JSON.stringify(body);
 }
 
 type Tab = "single" | "range";

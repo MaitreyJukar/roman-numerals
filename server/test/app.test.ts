@@ -19,23 +19,25 @@ describe("HTTP API", () => {
     assert.equal(res.body.output, "I");
   });
 
-  it("rejects missing query with plain text", async () => {
+  it("rejects missing query with JSON error", async () => {
     const res = await request(app).get("/romannumeral");
     assert.equal(res.status, 400);
-    assert.equal(res.type, "text/plain");
-    assert.match(res.text, /Provide query/i);
+    assert.equal(res.type, "application/json");
+    assert.match(res.body.error.message, /Provide query/i);
   });
 
   it("rejects invalid integer", async () => {
     const res = await request(app).get("/romannumeral").query({ query: "x" });
     assert.equal(res.status, 400);
-    assert.equal(res.type, "text/plain");
+    assert.equal(res.type, "application/json");
+    assert.match(res.body.error.message, /positive base-10 integer/i);
   });
 
   it("rejects out of range", async () => {
     const res = await request(app).get("/romannumeral").query({ query: "4000000" });
     assert.equal(res.status, 400);
-    assert.equal(res.type, "text/plain");
+    assert.equal(res.type, "application/json");
+    assert.match(res.body.error.message, /must be between/i);
   });
 
   it("accepts extended-range query", async () => {
@@ -79,7 +81,8 @@ describe("HTTP API", () => {
   it("range requires both min and max", async () => {
     const res = await request(app).get("/romannumeral").query({ min: "1" });
     assert.equal(res.status, 400);
-    assert.equal(res.type, "text/plain");
+    assert.equal(res.type, "application/json");
+    assert.match(res.body.error.message, /Both min and max/i);
   });
 
   it("GET /health", async () => {

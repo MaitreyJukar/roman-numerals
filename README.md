@@ -13,7 +13,7 @@ Specification reference for numerals: [Roman numerals (Wikipedia)](https://en.wi
   - **Extension 1:** supported range **1–3,999,999**: **1–3999** use ordinary subtractive form (e.g. 1001 → `MI`). From **4000** upward, the thousands factor uses **vinculum** (Unicode U+0305 after each glyph in that block). By default that block is **subtractive** Roman (e.g. 4000 → `IV` with combining overlines). With **`additive=true`**, the thousands block uses expanded additive symbols before barring (e.g. `IIII` with overlines).
   - **Extension 2:** `GET /romannumeral?min={integer}&max={integer}` with ascending `conversions` array; range work is split into chunks processed concurrently via `Promise.all` (async parallel batches).
   - **OpenAPI:** `GET /openapi.json` returns an OpenAPI 3.0.3 spec documenting `/romannumeral`, `/health`, `/metrics`, and schema examples.
-  - Errors return **plain text** with appropriate HTTP status codes (per brief).
+  - Validation errors return JSON as `{ "error": { "message": "<details>" } }` with appropriate HTTP status codes.
   - Conversion logic is **hand-written** (no Roman-numeral libraries).
 - **Front end:** React 19 + Vite; calls the same API (relative URLs when served by the server).
 - **Extension 3 / operations**
@@ -89,7 +89,7 @@ docker compose up --build
 
 ## Testing
 
-**Methodology:** unit tests cover the pure conversion and range assembler; HTTP tests assert status codes, content types (JSON vs plain text for errors), and response shapes using **supertest** against the Express app factory (no network listen).
+**Methodology:** unit tests cover the pure conversion and range assembler; HTTP tests assert status codes, content types (JSON for success and validation errors), and response shapes using **supertest** against the Express app factory (no network listen).
 
 ```bash
 npm test

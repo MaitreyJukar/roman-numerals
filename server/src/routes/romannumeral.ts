@@ -1,4 +1,5 @@
 import { Router } from "express";
+import type { Request, Response } from "express";
 import type { ParsedQs } from "qs";
 import { getCache, setCache } from "../lib/cache.js";
 import { romanConversionsTotal } from "../lib/metrics.js";
@@ -11,6 +12,12 @@ import {
 } from "../services/roman.js";
 
 const router = Router();
+const MAX_RANGE_FALLBACK = 10_000;
+const MAX_RANGE_CAP = 50_000;
+
+type ConversionRow = { input: string; output: string };
+type SinglePayload = { input: string; output: string };
+type RangePayload = { conversions: ConversionRow[] };
 
 function queryFirst(
   value: string | ParsedQs | (string | ParsedQs)[] | undefined
@@ -55,6 +62,96 @@ function assertInRange(n: number, label: string): string | null {
   return null;
 }
 
+function badRequest(res: Response, message: string): Response {
+  return res.status(400).json({ error: { message } });
+}
+
+function getMaxRangeSize(): number {
+  const raw = Number.parseInt(process.env.ROMAN_MAX_RANGE_SIZE || String(MAX_RANGE_FALLBACK), 10);
+  if (!Number.isFinite(raw) || raw < 1) return MAX_RANGE_FALLBACK;
+  return Math.min(raw, MAX_RANGE_CAP);
+}
+
+function parseSingleQuery(req: Request): ParseResult {
+  const q = parseIntParam("query", queryFirst(req.query.query));
+  if (!q.ok) return q;
+  const e = assertInRange(q.value, "query");
+  if (e) return { ok: false, error: e };
+  return q;
+}
+
+type RangeParseResult = { ok: true; min: number; max: number } | ParseErr;
+
+function parseRangeQuery(req: Request): RangeParseResult {
+  const hasMin = req.query.min !== undefined;
+  const hasMax = req.query.max !== undefined;
+  if (!hasMin || !hasMax) {
+    return { ok: false, error: "Both min and max query parameters are required for range conversion" };
+  }
+
+  const minR = parseIntParam("min", queryFirst(req.query.min));
+  if (!minR.ok) return minR;
+  const maxR = parseIntParam("max", queryFirst(req.query.max));
+  if (!maxR.ok) return maxR;
+
+  const e1 = assertInRange(minR.value, "min");
+  if (e1) return { ok: false, error: e1 };
+  const e2 = assertInRange(maxR.value, "max");
+  if (e2) return { ok: false, error: e2 };
+  if (minR.value >= maxR.value) {
+    return { ok: false, error: "min must be strictly less than max" };
+  }
+
+  const inclusiveCount = maxR.value - minR.value + 1;
+  const maxRange = getMaxRangeSize();
+  if (inclusiveCount > maxRange) {
+    return {
+      ok: false,
+      error: `Range too large: ${inclusiveCount} values requested; maximum inclusive range is ${maxRange} (set ROMAN_MAX_RANGE_SIZE up to ${MAX_RANGE_CAP})`
+    };
+  }
+
+  return { ok: true, min: minR.value, max: maxR.value };
+}
+
+async function handleRange(req: Request, res: Response, additive: boolean): Promise<Response> {
+  const parsed = parseRangeQuery(req);
+  if (!parsed.ok) return badRequest(res, parsed.error);
+
+  const { min, max } = parsed;
+  const cacheKey = `range:${min}:${max}:a${additive ? 1 : 0}`;
+  const cached = await getCache(cacheKey);
+  if (cached) {
+    romanConversionsTotal.labels("range_cached").inc();
+    return res.json(cached as RangePayload);
+  }
+
+  const conversions = await toRomanRangeParallel(min, max, { additive });
+  const payload = { conversions };
+  await setCache(cacheKey, payload);
+  romanConversionsTotal.labels("range").inc();
+  logger.info({ min, max, count: conversions.length, additive }, "roman range converted");
+  return res.json(payload);
+}
+
+async function handleSingle(req: Request, res: Response, additive: boolean): Promise<Response> {
+  const parsed = parseSingleQuery(req);
+  if (!parsed.ok) return badRequest(res, parsed.error);
+
+  const n = parsed.value;
+  const cacheKey = `single:${n}:a${additive ? 1 : 0}`;
+  const cached = await getCache(cacheKey);
+  if (cached) {
+    romanConversionsTotal.labels("single_cached").inc();
+    return res.json(cached as SinglePayload);
+  }
+
+  const payload = { input: String(n), output: toRoman(n, additive) };
+  await setCache(cacheKey, payload);
+  romanConversionsTotal.labels("single").inc();
+  return res.json(payload);
+}
+
 /**
  * Roman numeral conversion endpoint.
  *
@@ -70,78 +167,14 @@ router.get("/", async (req, res, next) => {
     const additive = parseAdditiveFlag(queryFirst(req.query.additive));
 
     if (hasMin || hasMax) {
-      if (!hasMin || !hasMax) {
-        return res.status(400).type("text/plain").send("Both min and max query parameters are required for range conversion");
-      }
-      const minR = parseIntParam("min", queryFirst(req.query.min));
-      if (!minR.ok) return res.status(400).type("text/plain").send(minR.error);
-      const maxR = parseIntParam("max", queryFirst(req.query.max));
-      if (!maxR.ok) return res.status(400).type("text/plain").send(maxR.error);
-
-      const min = minR.value;
-      const max = maxR.value;
-      const e1 = assertInRange(min, "min");
-      if (e1) return res.status(400).type("text/plain").send(e1);
-      const e2 = assertInRange(max, "max");
-      if (e2) return res.status(400).type("text/plain").send(e2);
-      if (min >= max) {
-        return res.status(400).type("text/plain").send("min must be strictly less than max");
-      }
-
-      const maxRange = (() => {
-        const raw = Number.parseInt(process.env.ROMAN_MAX_RANGE_SIZE || "10000", 10);
-        if (!Number.isFinite(raw) || raw < 1) return 10_000;
-        return Math.min(raw, 50_000);
-      })();
-      const inclusiveCount = max - min + 1;
-      if (inclusiveCount > maxRange) {
-        return res
-          .status(400)
-          .type("text/plain")
-          .send(
-            `Range too large: ${inclusiveCount} values requested; maximum inclusive range is ${maxRange} (set ROMAN_MAX_RANGE_SIZE up to 50000)`
-          );
-      }
-
-      const cacheKey = `range:${min}:${max}:a${additive ? 1 : 0}`;
-      const cached = await getCache(cacheKey);
-      if (cached) {
-        romanConversionsTotal.labels("range_cached").inc();
-        return res.json(cached as { conversions: { input: string; output: string }[] });
-      }
-
-      const conversions = await toRomanRangeParallel(min, max, { additive });
-      const payload = { conversions };
-      await setCache(cacheKey, payload);
-      romanConversionsTotal.labels("range").inc();
-      logger.info({ min, max, count: conversions.length, additive }, "roman range converted");
-      return res.json(payload);
+      return handleRange(req, res, additive);
     }
 
     if (hasQuery) {
-      const q = parseIntParam("query", queryFirst(req.query.query));
-      if (!q.ok) return res.status(400).type("text/plain").send(q.error);
-      const n = q.value;
-      const e = assertInRange(n, "query");
-      if (e) return res.status(400).type("text/plain").send(e);
-
-      const cacheKey = `single:${n}:a${additive ? 1 : 0}`;
-      const cached = await getCache(cacheKey);
-      if (cached) {
-        romanConversionsTotal.labels("single_cached").inc();
-        return res.json(cached as { input: string; output: string });
-      }
-
-      const payload = { input: String(n), output: toRoman(n, additive) };
-      await setCache(cacheKey, payload);
-      romanConversionsTotal.labels("single").inc();
-      return res.json(payload);
+      return handleSingle(req, res, additive);
     }
 
-    return res
-      .status(400)
-      .type("text/plain")
-      .send('Provide query (e.g. ?query=12) or range (e.g. ?min=1&max=3)');
+    return badRequest(res, "Provide query (e.g. ?query=12) or range (e.g. ?min=1&max=3)");
   } catch (err) {
     next(err);
   }

@@ -87,10 +87,28 @@ export const openApiSpec = {
           "400": {
             description: "Validation error",
             content: {
-              "text/plain": {
-                schema: { type: "string" },
+              "application/json": {
+                schema: {
+                  type: "object",
+                  required: ["error"],
+                  properties: {
+                    error: {
+                      type: "object",
+                      required: ["message"],
+                      properties: {
+                        message: { type: "string" }
+                      }
+                    }
+                  }
+                },
                 examples: {
-                  invalid: { value: "query must be between 1 and 3999999 inclusive" }
+                  invalid: {
+                    value: {
+                      error: {
+                        message: "query must be between 1 and 3999999 inclusive"
+                      }
+                    }
+                  }
                 }
               }
             }
