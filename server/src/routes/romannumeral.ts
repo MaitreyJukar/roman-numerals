@@ -55,6 +55,13 @@ function assertInRange(n: number, label: string): string | null {
   return null;
 }
 
+/**
+ * Roman numeral conversion endpoint.
+ *
+ * OpenAPI contract is exposed at GET /openapi.json.
+ * - Single value: GET /romannumeral?query=12[&additive=true]
+ * - Range values: GET /romannumeral?min=1&max=3[&additive=true]
+ */
 router.get("/", async (req, res, next) => {
   try {
     const hasMin = req.query.min !== undefined;

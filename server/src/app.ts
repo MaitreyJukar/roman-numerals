@@ -9,6 +9,7 @@ import helmet from "helmet";
 import { pinoHttp } from "pino-http";
 import { logger } from "./lib/logger.js";
 import { metricsHandler, metricsMiddleware } from "./lib/metrics.js";
+import { openApiSpec } from "./openapi.js";
 import romannumeral from "./routes/romannumeral.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -64,6 +65,9 @@ export function createApp(): Application {
   });
 
   app.get("/metrics", metricsHandler);
+  app.get("/openapi.json", (_req, res) => {
+    res.json(openApiSpec);
+  });
 
   app.use("/romannumeral", romannumeral);
 

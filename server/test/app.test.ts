@@ -94,4 +94,12 @@ describe("HTTP API", () => {
     const body = String(res.text);
     assert.ok(body.includes("# HELP") && body.includes("TYPE"));
   });
+
+  it("GET /openapi.json exposes romannumeral docs", async () => {
+    const res = await request(app).get("/openapi.json");
+    assert.equal(res.status, 200);
+    assert.equal(res.type, "application/json");
+    assert.equal(res.body.openapi, "3.0.3");
+    assert.ok(res.body.paths?.["/romannumeral"]?.get);
+  });
 });

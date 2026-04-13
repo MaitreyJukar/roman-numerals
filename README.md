@@ -12,6 +12,7 @@ Specification reference for numerals: [Roman numerals (Wikipedia)](https://en.wi
   - Optional **`additive`**: `additive=true`, `1`, `yes`, or `on` (case-insensitive) requests **additive** classical form where applicable (e.g. `IIII` for 4, and for n ≥ 4000 an **additive** thousands block before vinculum, e.g. four barred I’s for 4000). Same parameter on range queries: `?min=1&max=5&additive=true`. **Default** is subtractive everywhere: 1–3999, the **⌊n/1000⌋** thousands block with overlines, and the remainder 0–999.
   - **Extension 1:** supported range **1–3,999,999**: **1–3999** use ordinary subtractive form (e.g. 1001 → `MI`). From **4000** upward, the thousands factor uses **vinculum** (Unicode U+0305 after each glyph in that block). By default that block is **subtractive** Roman (e.g. 4000 → `IV` with combining overlines). With **`additive=true`**, the thousands block uses expanded additive symbols before barring (e.g. `IIII` with overlines).
   - **Extension 2:** `GET /romannumeral?min={integer}&max={integer}` with ascending `conversions` array; range work is split into chunks processed concurrently via `Promise.all` (async parallel batches).
+  - **OpenAPI:** `GET /openapi.json` returns an OpenAPI 3.0.3 spec documenting `/romannumeral`, `/health`, `/metrics`, and schema examples.
   - Errors return **plain text** with appropriate HTTP status codes (per brief).
   - Conversion logic is **hand-written** (no Roman-numeral libraries).
 - **Front end:** React 19 + Vite; calls the same API (relative URLs when served by the server).
