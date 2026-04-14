@@ -97,6 +97,14 @@ npm test
 
 **Typecheck only:** `npm run typecheck -w server` and `npm run typecheck -w client`.
 
+## GitHub Actions CI
+
+A GitHub Actions workflow is included at `.github/workflows/ci.yml`.
+
+- Triggers on pushes and pull requests to `main` (plus manual runs).
+- Runs `npm ci`, `npm run lint`, `npm run typecheck`, `npm test`, and `npm run build`.
+- Builds the Docker image in CI (`docker build`) without pushing.
+
 ## Engineering notes
 
 - **Security / robustness:** `helmet`, `compression`, configurable **CORS**, and rate limiting on `/romannumeral`.
